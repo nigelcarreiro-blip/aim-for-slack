@@ -72,7 +72,7 @@
   auto.onchange = () => { try { localStorage.setItem('aim-auto', auto.checked ? '1' : '0'); } catch {} };
 
   aim.invoke('screen-name').then(name => {
-    document.getElementById('sn').innerHTML = `<option>${escapeHtml(name || 'Slack (not running)')}</option>`;
+    document.getElementById('sn').innerHTML = `<option>${escapeHtml(name || 'Click Sign On to connect Slack')}</option>`;
     if (auto.checked && name) signOn();
   });
 

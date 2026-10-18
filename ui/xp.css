@@ -85,6 +85,13 @@ input[type=text], input[type=password], textarea {
 ::-webkit-scrollbar-thumb { background: linear-gradient(90deg, #c8d6fb, #bacbf8 50%, #a9bdf4); border: 1px solid #94a8e2; border-radius: 3px; min-height: 24px; }
 ::-webkit-scrollbar-button:single-button { height: 17px; background: linear-gradient(180deg, #e2ebfd, #c3d3fd); border: 1px solid #b7caf5; border-radius: 2px; display: block; }
 
+/* XP radio buttons */
+input[type=radio] {
+  -webkit-appearance: none; appearance: none; width: 13px; height: 13px; flex: none; margin: 1px 0 0;
+  border: 1px solid #1c5180; border-radius: 50%; background: linear-gradient(135deg, #dcdcd7, #fff); position: relative;
+}
+input[type=radio]:checked::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8bd88b, #21a121); }
+
 /* XP checkboxes */
 input[type=checkbox] {
   -webkit-appearance: none; appearance: none; width: 13px; height: 13px; flex: none; margin: 1px 0 0;

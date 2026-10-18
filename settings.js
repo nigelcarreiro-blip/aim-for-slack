@@ -4,6 +4,7 @@ const path = require('path');
 const { app } = require('electron');
 
 const DEFAULTS = {
+  connection: 'builtin',  // 'builtin' = Slack runs inside AIM; 'desktop' = borrow the Slack desktop app
   popIms: true,           // pop an IM window when someone DMs you
   popGroupIms: true,      // ...and for group DMs
   popMentions: true,      // pop a channel's chat window when someone @mentions you

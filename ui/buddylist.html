@@ -88,7 +88,7 @@
 <script>
   titlebar('Buddy List');
   document.querySelector('.client').prepend(menubar({
-    'My AIM': [['Away Message...', () => openAway()], ['I\'m Back', () => setBack()], '-', ['Preferences...', () => aim.invoke('open-prefs')], '-', ['Sign Off', () => aim.win('close')]],
+    'My AIM': [['Away Message...', () => openAway()], ['I\'m Back', () => setBack()], '-', ['Preferences...', () => aim.invoke('open-prefs')], '-', ['Show Slack Window', () => aim.invoke('slack-window')], ['Switch Slack Account...', () => switchAccount()], '-', ['Sign Off', () => aim.win('close')]],
     'People': [['Send Instant Message...', () => openPicker('im')], ['Join a Chat Room...', () => openPicker('chat')], ['Open in Slack', () => selected && aim.invoke('open-in-slack', selected)]],
     'Help': [['About AIM', () => alert('AOL Instant Messenger 5.5.3595\nNow running on Slack.')]],
   }));
@@ -199,6 +199,10 @@
     await aim.invoke('set-away', true, document.getElementById('awayMsg').value);
     status('You are away: ' + document.getElementById('awayMsg').value);
   };
+  async function switchAccount() {
+    if ((await aim.invoke('connection-mode')) !== 'builtin') { status('Switch accounts in the Slack app, then sign on again.', true); return; }
+    if (confirm('Sign out of the Slack account inside AIM? AIM will restart so you can sign in again.')) aim.invoke('slack-sign-out');
+  }
   async function setBack() { await aim.invoke('set-away', false); status(''); }
   function status(t, err) { const s = document.getElementById('status'); s.textContent = t; s.classList.toggle('err', !!err); }
 

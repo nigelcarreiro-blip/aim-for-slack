@@ -1,7 +1,8 @@
 // AIM 5.5 for Slack: Sign On window -> Buddy List window -> one Instant Message window per conversation.
 const { app, BrowserWindow, ipcMain, shell, screen, Notification, dialog } = require('electron');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const fs = require('fs');
 const { SlackBridge, PORT } = require('./bridge');
 const settings = require('./settings');
 
@@ -9,7 +10,11 @@ const settings = require('./settings');
 // `--smoke` is the self-test behind `npm run check`: demo workspace, drive the UI, exit 0/1.
 const SMOKE = process.argv.includes('--smoke');
 const DEMO = SMOKE || !!process.env.AIM_DEMO || process.argv.includes('--demo');
-const slack = DEMO ? new (require('./demo').DemoBridge)() : new SlackBridge();
+// Connection: 'builtin' (default) runs Slack's web client inside AIM; 'desktop' borrows the Slack desktop app.
+const MODE = DEMO ? 'demo' : settings.load().connection;
+const slack = MODE === 'demo' ? new (require('./demo').DemoBridge)()
+  : MODE === 'desktop' ? new SlackBridge()
+  : new (require('./embedded').EmbeddedSlackBridge)();
 const users = new Map();      // user id -> { id, name, real, handle, image, deleted, bot }
 const handles = new Map();    // slack handle -> user id (for group DM names)
 const convs = new Map();      // conversation id -> { id, kind: 'im'|'mpim'|'channel', name, user, private }
@@ -273,14 +278,14 @@ function notify(conv, msg) {
 
 slack.on('disconnected', () => {
   broadcast('status', 'Connection to Slack lost. Reconnecting...');
-  const retry = () => slack.connect().then(() => broadcast('status', '')).catch(() => setTimeout(retry, 3000));
+  const retry = () => slack.connect({ interactive: false }).then(() => broadcast('status', '')).catch(() => setTimeout(retry, 3000));
   setTimeout(retry, 3000);
 });
 
 // ---------- IPC ----------
 
 async function signOn() {
-  if (!slack.connected) await connectOrLaunchSlack();
+  if (!slack.connected) await (MODE === 'desktop' ? connectOrLaunchSlack() : slack.connect({ interactive: true }));
   await loadUsers();
   await loadConversations();
   openBuddyList();
@@ -294,7 +299,8 @@ async function signOn() {
 ipcMain.handle('signon', () => signOn());
 
 ipcMain.handle('screen-name', async () => {
-  try { if (!slack.connected) await slack.connect(); return slack.self?.name || ''; } catch { return ''; }
+  // Quiet check for the Sign On screen: never pops a sign-in window or restarts anything.
+  try { if (!slack.connected) await slack.connect({ interactive: false }); return slack.self?.name || ''; } catch { return ''; }
 });
 
 ipcMain.handle('buddy-list', () => buddyListPayload());
@@ -354,9 +360,17 @@ ipcMain.handle('open-dm-user', async (_e, userId) => {
   return { ok: true };
 });
 
+ipcMain.handle('connection-mode', () => MODE);
+ipcMain.handle('slack-window', () => slack.showWindow?.());
+ipcMain.handle('slack-sign-out', async () => {
+  await slack.signOut?.();
+  app.relaunch();
+  app.exit(0);
+});
+
 ipcMain.handle('open-in-slack', (_e, id) => {
   if (DEMO) return;
-  shell.openExternal(`slack://channel?team=${slack.team}&id=${id}`);
+  slack.openConversation(id);
 });
 
 ipcMain.handle('set-away', async (_e, away, message) => {
@@ -377,7 +391,40 @@ ipcMain.on('win', (e, action) => {
 
 const run = (cmd, args) => new Promise(res => execFile(cmd, args, (err, stdout) => res(err ? '' : stdout)));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const slackRunning = async () => (await run('pgrep', ['-f', 'Slack.app/Contents/MacOS/Slack$'])).trim() !== '';
+const IS_WIN = process.platform === 'win32';
+const BRIDGE_ARGS = [`--remote-debugging-port=${PORT}`, '--remote-allow-origins=http://127.0.0.1'];
+
+// Slack's usual Windows installs: per-user (Squirrel) and machine-wide (MSI).
+// The Microsoft Store version can't be started with extra flags, so it isn't supported.
+function windowsSlackExe() {
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'slack', 'slack.exe'),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Slack', 'slack.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Slack', 'slack.exe'),
+  ];
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
+
+const slackRunning = async () => IS_WIN
+  ? /slack\.exe/i.test(await run('tasklist', ['/FI', 'IMAGENAME eq slack.exe', '/NH']))
+  : (await run('pgrep', ['-f', 'Slack.app/Contents/MacOS/Slack$'])).trim() !== '';
+
+async function quitSlack() {
+  // On Windows, closing Slack only hides it in the tray, so it has to be ended outright.
+  if (IS_WIN) await run('taskkill', ['/IM', 'slack.exe', '/T', '/F']);
+  else await run('osascript', ['-e', 'quit app "Slack"']);
+  for (let i = 0; i < 40 && await slackRunning(); i++) await sleep(250);
+}
+
+async function startSlackWithBridge() {
+  if (IS_WIN) {
+    const exe = windowsSlackExe();
+    if (!exe) throw new Error('Could not find slack.exe. Install Slack from slack.com/downloads (the Microsoft Store version is not supported).');
+    spawn(exe, BRIDGE_ARGS, { detached: true, stdio: 'ignore' }).unref();
+  } else {
+    await run('open', ['-a', 'Slack', '--args', ...BRIDGE_ARGS]);
+  }
+}
 
 // AIM rides on the Slack desktop app. Slack has to be started with a local-only debug port
 // so AIM can use its session; if it's running without one, ask before restarting it.
@@ -387,13 +434,12 @@ async function connectOrLaunchSlack() {
     const { response } = await dialog.showMessageBox(signonWin || undefined, {
       type: 'question', buttons: ['Restart Slack', 'Cancel'], defaultId: 0, cancelId: 1,
       message: 'AIM needs to restart Slack once',
-      detail: `AIM connects through your Slack app, which has to be running with AIM's local bridge (port ${PORT}, only reachable from this Mac). Slack will quit and reopen right away, still signed in.`,
+      detail: `AIM connects through your Slack app, which has to be running with AIM's local bridge (port ${PORT}, only reachable from this computer). Slack will quit and reopen right away, still signed in.`,
     });
     if (response !== 0) throw new Error('Sign on cancelled: Slack was not restarted.');
-    await run('osascript', ['-e', 'quit app "Slack"']);
-    for (let i = 0; i < 40 && await slackRunning(); i++) await sleep(250);
+    await quitSlack();
   }
-  await run('open', ['-a', 'Slack', '--args', `--remote-debugging-port=${PORT}`, '--remote-allow-origins=http://127.0.0.1']);
+  await startSlackWithBridge();
   for (let i = 0; i < 60; i++) {
     await sleep(1000);
     try { await slack.connect(); return; } catch {}
@@ -428,14 +474,20 @@ async function smokeTest() {
     checks.imAfterSend = await query(im, `document.querySelectorAll('.msg').length`);
     openPrefs();
     await loaded(prefsWin);
-    checks.prefsCheckboxes = await query(prefsWin, `new Promise(r => setTimeout(() => r(document.querySelectorAll('[data-key]').length), 500))`);
+    checks.prefsCheckboxes = await query(prefsWin, `new Promise(r => setTimeout(() => r(document.querySelectorAll('input[type=checkbox][data-key]').length), 500))`);
     clearTimeout(timer);
     const ok = checks.signonScreenName === 'jordan.mitchell' && checks.buddies > 10 && checks.imMessages > 0 &&
-      checks.imAfterSend === checks.imMessages + 1 && checks.prefsCheckboxes === Object.keys(settings.DEFAULTS).length;
+      checks.imAfterSend === checks.imMessages + 1 &&
+      checks.prefsCheckboxes === Object.values(settings.DEFAULTS).filter(v => typeof v === 'boolean').length;
     console.log(JSON.stringify({ ok, checks }));
     app.exit(ok ? 0 : 1);
   } catch (e) { fail(e.stack || String(e)); }
 }
+
+// Windows ties toast notifications to this ID (it matches the installer's Start-menu shortcut).
+if (IS_WIN) app.setAppUserModelId('com.github.aim-for-slack');
+// The hidden built-in Slack window refuses to close on its own; let it go when AIM quits.
+app.on('before-quit', () => slack.close?.());
 
 app.whenReady().then(SMOKE ? smokeTest : openSignon);
 app.on('window-all-closed', () => app.quit());

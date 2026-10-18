@@ -16,13 +16,15 @@ Point Claude Code, Codex, Cursor, or any coding agent at this repo and say:
 
 ## How it works
 
-AIM for Slack doesn't need a Slack API token or a custom Slack app, so there's nothing for a workspace admin to approve. Instead, it rides on the Slack desktop app you're already signed in to:
+AIM for Slack doesn't need a Slack API token or a custom Slack app, so there's nothing for a workspace admin to approve.
 
-- Slack runs with Chromium's remote-debugging port turned on (`--remote-debugging-port=9333`). The port only listens on `127.0.0.1`.
-- AIM connects to that port. It calls Slack's Web API **from inside Slack's own page**, using Slack's existing session, so the token never leaves Slack.
-- Live messages, typing, and presence come from watching the websocket traffic Slack already receives.
+**Built-in Slack (the default).** AIM runs Slack's regular web version in a hidden window with its own saved sign-in. You sign in once, the same way you would in a browser, including company single sign-on. After that, AIM:
+- calls Slack's Web API **from inside that page**, using its own session, so the token never leaves it
+- picks up live messages, typing, and presence by watching the websocket traffic the page already receives, through Electron's built-in debugger
 
-The first time you sign on, AIM asks before restarting Slack with the bridge turned on. Slack reopens still signed in.
+There's no open port, the Slack desktop app doesn't need to be installed, and your regular Slack stays completely separate. Talk, Get Info, and thread links open that built-in Slack window at the right conversation.
+
+**Desktop app connection (optional, in Preferences > Connection).** AIM borrows the Slack desktop app you're already signed in to instead. AIM asks once before restarting Slack with a local-only debug port (`127.0.0.1:9333`), and Slack has to stay open. Use this if your workplace blocks Slack in the browser.
 
 ## Try it without Slack
 
@@ -30,9 +32,11 @@ The first time you sign on, AIM asks before restarting Slack with the bridge tur
 
 ## Requirements
 
-- macOS
-- The Slack desktop app (not the browser version), signed in to any workspace. Regular workspaces and Enterprise Grid should both work. With several workspaces, AIM uses whichever one is open in Slack.
+- macOS or Windows 10/11
 - Node.js 20 or newer
+- A Slack account on any workspace. Regular workspaces and Enterprise Grid should both work.
+
+The Slack desktop app is only needed for the optional desktop-app connection. On Windows, the desktop-app connection doesn't work with the Microsoft Store version of Slack.
 
 ## Install
 
@@ -41,13 +45,13 @@ git clone https://github.com/nigelcarreiro-blip/aim-for-slack.git
 cd aim-for-slack
 npm ci
 npm run check             # self-test on a fake workspace; must end with "ok":true
-npm run install-app       # build AIM.app and copy it into /Applications
-open /Applications/AIM.app
+npm run install-app       # build and install AIM
 ```
 
-You can also run `npm start` to run it from source.
+- **macOS:** installs `/Applications/AIM.app`. It's ad-hoc signed because you built it yourself, so the first time you open it macOS may ask you to confirm in System Settings > Privacy & Security.
+- **Windows:** builds `dist\AIM-Setup-<version>.exe` and runs it silently. AIM is installed per user, with Start-menu and desktop shortcuts. Windows SmartScreen may warn about an unsigned app: choose "More info" > "Run anyway".
 
-`npm run build` builds `dist/AIM.app` without installing it. The app is ad-hoc signed, so the first time you open it macOS may ask you to confirm in System Settings > Privacy & Security.
+`npm run build` builds without installing. `npm start` runs it from source.
 
 ## What's in it
 
@@ -71,8 +75,9 @@ You can also run `npm start` to run it from source.
 - **Preferences** (My AIM > Preferences, or Setup):
   - pop-up behavior for IMs, group chats, and @mentions
   - whether @here and @channel count as mentions
-  - macOS notification banners
+  - notification banners
   - sounds
+  - which Slack connection to use
 
 AIM never changes your Slack notification settings.
 
@@ -80,8 +85,9 @@ Threads, huddles, canvases, and file uploads stay in Slack. AIM shows "(2 replie
 
 ## Caveats
 
-- **Unofficial.** This isn't made by or affiliated with Slack or AOL. It drives your own logged-in Slack client the way a browser extension might. Check your workplace's IT policy before using it on a work account.
-- **The debug port is local, but it is powerful.** While Slack runs with it, any program on your Mac can use it to read your Slack session. Quit Slack and reopen it normally to turn the port off.
+- **Unofficial.** This isn't made by or affiliated with Slack or AOL. It uses your own Slack sign-in the way a browser does. Check your workplace's IT policy before using it on a work account.
+- **The built-in Slack stays signed in** inside AIM's own app data. My AIM > Switch Slack Account signs it out.
+- **The desktop-app connection opens a local debug port.** While Slack runs with it, any program on your computer can use that port to read your Slack session. Built-in Slack doesn't do this.
 - **It can break.** It depends on Slack's internal web client, which Slack can change at any time.
 
 ## Credits

@@ -1,4 +1,5 @@
-// SlackBridge: talks to the logged-in Slack desktop app over its Chromium debug port.
+// SlackBridge ("desktop app" connection): talks to the logged-in Slack desktop app over its Chromium debug port.
+// The default connection is EmbeddedSlackBridge in embedded.js; both share FIND_TEAM and apiExpression.
 // API calls run inside Slack's own page (its session token never leaves Slack),
 // and live events come from watching Slack's own websocket frames.
 const { EventEmitter } = require('events');
@@ -82,19 +83,24 @@ class SlackBridge extends EventEmitter {
     return r.result.value;
   }
 
-  // Calls a Slack Web API method from inside Slack's page, using its own session.
-  api(method, params = {}) {
-    return this.eval(`(async () => {
-      const t = ${FIND_TEAM};
-      if (!t) return { ok: false, error: 'no_workspace' };
-      const fd = new FormData();
-      fd.append('token', t.token);
-      const p = ${JSON.stringify(params)};
-      for (const k in p) fd.append(k, typeof p[k] === 'object' ? JSON.stringify(p[k]) : String(p[k]));
-      const res = await fetch('/api/${method}', { method: 'POST', body: fd, credentials: 'include' });
-      return res.json();
-    })()`);
-  }
+  api(method, params = {}) { return this.eval(apiExpression(method, params)); }
+
+  // Talk / Get Info / thread links: hand off to the Slack desktop app.
+  openConversation(id) { require('electron').shell.openExternal(`slack://channel?team=${this.team}&id=${id}`); }
 }
 
-module.exports = { SlackBridge, PORT };
+// JS that calls a Slack Web API method from inside Slack's page, using its own session.
+function apiExpression(method, params = {}) {
+  return `(async () => {
+    const t = ${FIND_TEAM};
+    if (!t) return { ok: false, error: 'no_workspace' };
+    const fd = new FormData();
+    fd.append('token', t.token);
+    const p = ${JSON.stringify(params)};
+    for (const k in p) fd.append(k, typeof p[k] === 'object' ? JSON.stringify(p[k]) : String(p[k]));
+    const res = await fetch('/api/${method}', { method: 'POST', body: fd, credentials: 'include' });
+    return res.json();
+  })()`;
+}
+
+module.exports = { SlackBridge, PORT, FIND_TEAM, apiExpression };

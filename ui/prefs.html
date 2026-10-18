@@ -27,6 +27,7 @@
       <div class="cat on" data-page="im">IM / Chat</div>
       <div class="cat" data-page="notify">Notifications</div>
       <div class="cat" data-page="sounds">Sounds</div>
+      <div class="cat" data-page="connection">Connection</div>
     </div>
     <div class="pane">
       <div class="page on" id="im">
@@ -51,6 +52,15 @@
           <div class="hint" style="margin-left:0">AIM never changes your Slack settings. Slack's own notifications keep working as usual.</div>
         </fieldset>
       </div>
+      <div class="page" id="connection">
+        <fieldset><legend>Connect to Slack using</legend>
+          <label><input type="radio" name="connection" value="builtin" data-key="connection"> Built-in Slack (recommended)</label>
+          <div class="hint">AIM runs Slack's web version in a hidden window with its own sign-in. The Slack app doesn't need to be installed or open.</div>
+          <label><input type="radio" name="connection" value="desktop" data-key="connection"> The Slack desktop app</label>
+          <div class="hint">AIM borrows the Slack app you're signed in to. Slack has to stay open, and AIM restarts it once with a local-only debug port.</div>
+          <div class="hint" style="margin-left:0; margin-top:6px"><b>Takes effect the next time you open AIM.</b></div>
+        </fieldset>
+      </div>
       <div class="page" id="sounds">
         <fieldset><legend>Sounds</legend>
           <label><input type="checkbox" data-key="imSounds"> Play a sound when IMs are received and sent</label>
@@ -71,9 +81,16 @@
     document.querySelectorAll('.cat, .page').forEach(e => e.classList.remove('on'));
     c.classList.add('on'); document.getElementById(c.dataset.page).classList.add('on');
   });
-  const boxes = [...document.querySelectorAll('[data-key]')];
-  aim.invoke('get-settings').then(s => boxes.forEach(b => (b.checked = !!s[b.dataset.key])));
-  const collect = () => Object.fromEntries(boxes.map(b => [b.dataset.key, b.checked]));
+  const boxes = [...document.querySelectorAll('input[type=checkbox][data-key]')];
+  const radios = [...document.querySelectorAll('input[type=radio][data-key]')];
+  aim.invoke('get-settings').then(s => {
+    boxes.forEach(b => (b.checked = !!s[b.dataset.key]));
+    radios.forEach(r => (r.checked = s[r.dataset.key] === r.value));
+  });
+  const collect = () => ({
+    ...Object.fromEntries(boxes.map(b => [b.dataset.key, b.checked])),
+    ...Object.fromEntries(radios.filter(r => r.checked).map(r => [r.dataset.key, r.value])),
+  });
   const apply = () => aim.invoke('set-settings', collect());
   document.getElementById('apply').onclick = apply;
   document.getElementById('ok').onclick = async () => { await apply(); aim.win('close'); };

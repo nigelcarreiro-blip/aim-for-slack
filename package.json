@@ -6,13 +6,14 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build": "scripts/build-mac.sh",
-    "install-app": "scripts/build-mac.sh --install",
+    "build": "node scripts/build.mjs",
+    "install-app": "node scripts/build.mjs --install",
     "demo": "electron . --demo",
-    "check": "node --check main.js && node --check bridge.js && node --check settings.js && node --check demo.js && node --check preload.js && electron . --smoke"
+    "check": "node scripts/check-secrets.mjs && node --check main.js && node --check bridge.js && node --check settings.js && node --check demo.js && node --check embedded.js && node --check preload.js && electron . --smoke"
   },
   "devDependencies": {
-    "electron": "33.4.11"
+    "electron": "44.5.1",
+    "electron-builder": "25.1.8"
   },
   "dependencies": {
     "ws": "8.22.0"
@@ -22,6 +23,41 @@
     "node": ">=20"
   },
   "os": [
-    "darwin"
-  ]
+    "darwin",
+    "win32"
+  ],
+  "build": {
+    "appId": "com.github.aim-for-slack",
+    "productName": "AIM",
+    "files": [
+      "main.js",
+      "bridge.js",
+      "embedded.js",
+      "settings.js",
+      "demo.js",
+      "preload.js",
+      "package.json",
+      "ui/**",
+      "assets/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon/AIM.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AIM",
+      "runAfterFinish": true,
+      "artifactName": "AIM-Setup-${version}.exe"
+    }
+  },
+  "author": "Nigel Carreiro"
 }
