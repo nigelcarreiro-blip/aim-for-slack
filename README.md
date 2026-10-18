@@ -18,7 +18,7 @@ Point Claude Code, Codex, Cursor, or any coding agent at this repo and say:
 
 AIM for Slack doesn't need a Slack API token or a custom Slack app, so there's nothing for a workspace admin to approve.
 
-**Built-in Slack (the default).** AIM runs Slack's regular web version in a hidden window with its own saved sign-in. You sign in once, the same way you would in a browser, including company single sign-on. After that, AIM:
+**Built-in Slack (the default).** AIM runs Slack's regular web version in a hidden window with its own saved sign-in. The first time you sign on, AIM offers to **copy the sign-in from your Slack app**. That takes about 10 seconds: Slack restarts for a moment while AIM reads its session, then goes back to normal. You can also sign in yourself, the same way you would in a browser, including company single sign-on. After that, AIM:
 - calls Slack's Web API **from inside that page**, using its own session, so the token never leaves it
 - picks up live messages, typing, and presence by watching the websocket traffic the page already receives, through Electron's built-in debugger
 

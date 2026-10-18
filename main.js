@@ -285,7 +285,7 @@ slack.on('disconnected', () => {
 // ---------- IPC ----------
 
 async function signOn() {
-  if (!slack.connected) await (MODE === 'desktop' ? connectOrLaunchSlack() : slack.connect({ interactive: true }));
+  if (!slack.connected) await (MODE === 'desktop' ? connectOrLaunchSlack() : MODE === 'builtin' ? connectBuiltin() : slack.connect());
   await loadUsers();
   await loadConversations();
   openBuddyList();
@@ -428,23 +428,99 @@ async function startSlackWithBridge() {
 
 // AIM rides on the Slack desktop app. Slack has to be started with a local-only debug port
 // so AIM can use its session; if it's running without one, ask before restarting it.
-async function connectOrLaunchSlack() {
-  try { await slack.connect(); return; } catch {}
+async function connectOrLaunchSlack(bridge = slack, { ask = true } = {}) {
+  try { await bridge.connect(); return; } catch {}
   if (await slackRunning()) {
-    const { response } = await dialog.showMessageBox(signonWin || undefined, {
-      type: 'question', buttons: ['Restart Slack', 'Cancel'], defaultId: 0, cancelId: 1,
-      message: 'AIM needs to restart Slack once',
-      detail: `AIM connects through your Slack app, which has to be running with AIM's local bridge (port ${PORT}, only reachable from this computer). Slack will quit and reopen right away, still signed in.`,
-    });
-    if (response !== 0) throw new Error('Sign on cancelled: Slack was not restarted.');
+    if (ask) {
+      const { response } = await dialog.showMessageBox(signonWin || undefined, {
+        type: 'question', buttons: ['Restart Slack', 'Cancel'], defaultId: 0, cancelId: 1,
+        message: 'AIM needs to restart Slack once',
+        detail: `AIM connects through your Slack app, which has to be running with AIM's local bridge (port ${PORT}, only reachable from this computer). Slack will quit and reopen right away, still signed in.`,
+      });
+      if (response !== 0) throw new Error('Sign on cancelled: Slack was not restarted.');
+    }
     await quitSlack();
   }
   await startSlackWithBridge();
   for (let i = 0; i < 60; i++) {
     await sleep(1000);
-    try { await slack.connect(); return; } catch {}
+    try { await bridge.connect(); return; } catch {}
   }
   throw new Error('Could not reach Slack. Is the Slack desktop app installed?');
+}
+
+// AIM_DEBUG=1 logs the sign-in steps to stderr.
+const debug = (...a) => { if (process.env.AIM_DEBUG) console.error('[aim]', ...a); };
+
+const desktopSlackInstalled = () => IS_WIN ? !!windowsSlackExe() : fs.existsSync('/Applications/Slack.app');
+
+async function startSlackNormally() {
+  // Give the old Slack a moment to finish exiting, or the relaunch is swallowed by the dying instance.
+  for (let i = 0; i < 40 && await slackRunning(); i++) await sleep(250);
+  await sleep(1500);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (IS_WIN) { const exe = windowsSlackExe(); if (exe) spawn(exe, [], { detached: true, stdio: 'ignore' }).unref(); }
+    else await run('open', ['-a', 'Slack']);
+    for (let i = 0; i < 20; i++) { await sleep(500); if (await slackRunning()) return; }
+  }
+}
+
+// Built-in Slack, first sign-on: copy the session the Slack desktop app already has,
+// so the user doesn't have to sign in again. Restarts Slack with the bridge, reads its
+// cookies, then (if it wasn't already bridged) restarts Slack normally to close the port.
+async function importSignInFromDesktop() {
+  const desk = new SlackBridge();
+  let alreadyBridged = true;
+  try { await desk.connect(); } catch { alreadyBridged = false; }
+  debug('desktop Slack already bridged:', alreadyBridged);
+  if (!alreadyBridged) await connectOrLaunchSlack(desk, { ask: false });
+  debug('connected to desktop Slack as', desk.self?.name);
+  const domains = await desk.eval(`(() => {
+    const teams = JSON.parse(localStorage.getItem('localConfig_v2') || '{}').teams || {};
+    return Object.values(teams).map(t => t.url).filter(Boolean);
+  })()`).catch(() => []);
+  const urls = ['https://slack.com/', 'https://app.slack.com/', 'https://edgeapi.slack.com/', ...domains];
+  const { cookies } = await desk.send('Network.getCookies', { urls });
+  debug('read cookies:', cookies.map(c => c.name).join(' '));
+  desk.ws.close();
+  if (!alreadyBridged) { await quitSlack(); await startSlackNormally(); }
+  if (!cookies.some(c => c.name === 'd')) throw new Error('The Slack app is not signed in.');
+  const n = await slack.importCookies(cookies, domains[0]);
+  debug('imported cookies:', n, 'built-in Slack now at', slack.win?.webContents.getURL());
+  return n;
+}
+
+// Built-in Slack sign-on: already signed in? Otherwise offer to copy the Slack app's sign-in,
+// and fall back to Slack's own sign-in window.
+async function connectBuiltin() {
+  // The Sign On screen already checked quietly; don't wait through it a second time.
+  if (!slack.knownSignedOut) { try { await slack.connect({ interactive: false }); return; } catch {} }
+  let choice = 1;
+  // AIM_SIGNIN_CHOICE=copy|manual answers the dialog below (for tests and scripted setups).
+  const preset = { copy: 0, manual: 1 }[process.env.AIM_SIGNIN_CHOICE];
+  if (preset !== undefined) choice = preset;
+  else if (desktopSlackInstalled()) {
+    ({ response: choice } = await dialog.showMessageBox(signonWin || undefined, {
+      type: 'question', buttons: ['Copy sign-in from Slack app', 'Sign in manually', 'Cancel'], defaultId: 0, cancelId: 2,
+      message: 'Sign in to Slack',
+      detail: 'AIM can copy the sign-in from the Slack app on this computer, so you don\'t have to sign in again. Slack will quickly restart (twice) while AIM reads it. The sign-in is only stored inside AIM.',
+    }));
+  }
+  if (choice === 2) throw new Error('Sign on cancelled.');
+  if (choice === 0) {
+    try {
+      await importSignInFromDesktop();
+      await slack.connect({ interactive: false, afterImport: true });
+      return;
+    } catch (e) {
+      debug('copy sign-in failed:', e.stack || e.message);
+      await dialog.showMessageBox(signonWin || undefined, {
+        type: 'warning', buttons: ['Sign in manually'], message: 'Could not copy the sign-in',
+        detail: `${e.message}\n\nYou can sign in to Slack in the next window instead.`,
+      });
+    }
+  }
+  await slack.connect({ interactive: true });
 }
 
 // Self-test: sign on to the demo workspace, open an IM, and check every window actually rendered.

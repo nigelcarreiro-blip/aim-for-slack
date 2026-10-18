@@ -5,9 +5,11 @@ const { EventEmitter } = require('events');
 const { BrowserWindow, session, shell } = require('electron');
 const { FIND_TEAM, apiExpression } = require('./bridge');
 
-const PARTITION = 'persist:slack';
+// AIM_SLACK_PARTITION lets tests use a throwaway sign-in without touching the real one.
+const PARTITION = process.env.AIM_SLACK_PARTITION || 'persist:slack';
 const HOME = 'https://app.slack.com/client';
 const SIGNED_IN = /^https:\/\/app\.slack\.com\/client\/[TE][A-Z0-9]+/;
+const SIGN_IN_PAGE = /slack\.com\/(workspace-signin|signin|get-started|check-email|ssb\/signin)/;
 
 class EmbeddedSlackBridge extends EventEmitter {
   constructor() {
@@ -62,15 +64,22 @@ class EmbeddedSlackBridge extends EventEmitter {
     return this.win;
   }
 
-  // Resolves once Slack's web client is signed in and has a session for a workspace.
-  async waitForSignIn(timeoutMs) {
+  // Resolves with the workspace id once Slack's web client is signed in, or null.
+  // Slack's web client can take a while to boot cold, so this waits for a real answer:
+  // signed in (a workspace session exists), or, with stopOnSignInPage, Slack's sign-in page holding steady.
+  async waitForSignIn(timeoutMs, { stopOnSignInPage = false } = {}) {
     const end = Date.now() + timeoutMs;
+    let onSignInSince = null;
     while (Date.now() < end) {
       if (!this.win || this.win.isDestroyed()) throw new Error('The Slack window was closed.');
       const url = this.win.webContents.getURL();
-      if (SIGNED_IN.test(url) && !this.win.webContents.isLoading()) {
+      if (SIGNED_IN.test(url)) {
+        onSignInSince = null;
         const team = await this.eval(`(${FIND_TEAM} || {}).id || null`).catch(() => null);
         if (team) return team;
+      } else if (stopOnSignInPage && SIGN_IN_PAGE.test(url)) {
+        onSignInSince = onSignInSince || Date.now();
+        if (Date.now() - onSignInSince > 2500) return null;
       }
       await new Promise(r => setTimeout(r, 500));
     }
@@ -78,9 +87,11 @@ class EmbeddedSlackBridge extends EventEmitter {
   }
 
   // interactive: show Slack's sign-in page if needed. Otherwise fail quietly when signed out.
-  async connect({ interactive = true } = {}) {
+  // afterImport: Slack passes through its sign-in page while it picks up copied cookies, so don't treat that as signed out.
+  async connect({ interactive = true, waitMs = 45000, afterImport = false } = {}) {
     this.ensureWindow();
-    let team = await this.waitForSignIn(interactive ? 12000 : 8000);
+    let team = await this.waitForSignIn(waitMs, { stopOnSignInPage: !afterImport });
+    this.knownSignedOut = !team;
     if (!team) {
       if (!interactive) throw new Error('Not signed in to Slack yet.');
       this.emit('needs-sign-in');
@@ -113,6 +124,27 @@ class EmbeddedSlackBridge extends EventEmitter {
   }
 
   showWindow() { this.ensureWindow(); this.win.show(); this.win.focus(); }
+
+  // "Copy sign-in from Slack app": cookies read from the desktop app (via CDP Network.getCookies)
+  // are copied into AIM's own Slack session, then the built-in Slack reloads signed in.
+  // startUrl: the workspace's own address (e.g. https://acme.slack.com/). With copied cookies it signs in
+  // within seconds, while app.slack.com/client stalls on the sign-in page.
+  async importCookies(cookies, startUrl) {
+    const slackCookies = cookies.filter(c => /(^|\.)slack\.com$/.test(c.domain.replace(/^\./, '')));
+    this.ensureWindow();
+    const wc = this.win.webContents;
+    // Same CDP call the cookies came from, so every attribute (httpOnly, sameSite, expiry) carries over exactly.
+    await wc.debugger.sendCommand('Network.setCookies', {
+      cookies: slackCookies.map(c => ({
+        name: c.name, value: c.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly,
+        ...(c.sameSite && { sameSite: c.sameSite }), ...(c.expires > 0 && { expires: c.expires }),
+      })),
+    });
+    await session.fromPartition(PARTITION).cookies.flushStore();
+    this.knownSignedOut = false;
+    await this.win.loadURL(startUrl || HOME).catch(() => {});
+    return slackCookies.length;
+  }
 
   // "Switch Slack account": forget the built-in sign-in.
   async signOut() {

@@ -67,11 +67,12 @@ npm run install-app
 
 Open AIM (`open /Applications/AIM.app` on macOS, or the AIM shortcut on Windows), then tell the user:
 1. Click **Sign On**.
-2. A **"Sign in to Slack - AIM"** window opens. The user signs in to their workspace the way they would in a browser: email code, password, or company single sign-on. **Never sign in for them or ask for their password.** When sign-in finishes, the window hides itself and the Buddy List appears.
-3. Double-click a buddy to IM them.
-4. Optionally, open Preferences (My AIM > Preferences, or the Setup button) and click **Test Banner** so the OS asks permission for notifications.
+2. If the Slack desktop app is installed and signed in, AIM asks **"Sign in to Slack"**. Recommend **Copy sign-in from Slack app**: AIM restarts Slack for a moment, copies its session into AIM's own storage, and puts Slack back to normal. It takes about 10 seconds, with no typing. The user has to click the button; don't click it for them.
+3. Otherwise, or if they choose **Sign in manually**, a **"Sign in to Slack - AIM"** window opens. The user signs in to their workspace the way they would in a browser: email code, password, or company single sign-on. **Never sign in for them or ask for their password.** When sign-in finishes, the window hides itself.
+4. The Buddy List appears. Double-click a buddy to IM them.
+5. Optionally, open Preferences (My AIM > Preferences, or the Setup button) and click **Test Banner** so the OS asks permission for notifications.
 
-AIM remembers the sign-in. My AIM > Switch Slack Account signs out.
+AIM remembers the sign-in, so later Sign Ons just reconnect (a few seconds), and Auto-login skips the Sign On screen. My AIM > Switch Slack Account signs out.
 
 To try the app without Slack, run `npm run demo`.
 
@@ -93,6 +94,7 @@ Have the user switch to Preferences > Connection > **The Slack desktop app**, th
 | "Please update your browser" in the Slack window | Electron is too old for Slack. Make sure `npm ci` installed the pinned Electron (`npx electron --version` should print v44.5.1). |
 | The sign-in window says to use the Slack app, or SSO is blocked | The workspace blocks browser access. Use the desktop-app connection (see above). |
 | The Sign On box says "Click Sign On to connect Slack" | Normal before the first sign-in, or after Switch Slack Account. |
+| "Could not copy the sign-in" | The Slack app isn't signed in, or couldn't be restarted. Sign in manually in the next window instead. |
 | Wrong workspace | My AIM > Show Slack Window, switch workspace there, then quit AIM and sign on again. |
 | macOS blocks AIM.app on first open | System Settings > Privacy & Security > "Open Anyway". It's ad-hoc signed because it was built locally. |
 | Windows SmartScreen warns | "More info" > "Run anyway". The installer is unsigned because it was built locally. |
