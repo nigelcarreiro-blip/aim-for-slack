@@ -1,0 +1,20 @@
+{
+  "name": "aim-for-slack",
+  "version": "0.1.0",
+  "description": "AOL Instant Messenger 5.5 for Slack: a Buddy List and pop-up IM windows that run on top of the Slack desktop app",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "scripts/build-mac.sh",
+    "install-app": "scripts/build-mac.sh --install",
+    "demo": "electron . --demo"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "license": "MIT"
+}

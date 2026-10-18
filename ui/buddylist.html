@@ -1,0 +1,231 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Buddy List</title>
+<link rel="stylesheet" href="xp.css">
+<style>
+  .ad { flex: none; height: 64px; margin: 4px 4px 0; display: grid; place-items: center; background: #fff; border: 1px solid var(--edge); }
+  .ad img { image-rendering: pixelated; max-width: 100%; max-height: 58px; }
+  .head { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 6px 3px; }
+  .head .man { width: 26px; height: 31px; background: var(--man) center / contain no-repeat; }
+  .head .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .head img { width: 142px; height: 16px; image-rendering: pixelated; }
+  .head .sn { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs { flex: none; display: flex; padding: 0 4px; margin-top: 2px; }
+  .tab { padding: 3px 10px; border: 1px solid #919b9c; border-bottom: none; border-radius: 3px 3px 0 0; background: linear-gradient(#fff, #ecebe5); margin-right: -1px; position: relative; top: 1px; }
+  .tab.on { background: #fff; border-top: 2px solid #e68b2c; padding-top: 2px; z-index: 1; font-weight: bold; }
+  .list { flex: 1; min-height: 0; overflow-y: auto; margin: 0 4px; padding: 3px 0; border: 1px solid #919b9c; background: #fff; }
+  .group { padding: 1px 4px; font-weight: bold; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .group .tri { width: 9px; height: 9px; flex: none; }
+  .group.closed .tri { transform: rotate(-90deg); }
+  .group.closed + .members { display: none; }
+  .buddy { padding: 1px 4px 1px 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+  .buddy .nm { overflow: hidden; text-overflow: ellipsis; }
+  .buddy.sel { background: var(--select); color: #fff; }
+  .buddy.unread .nm { font-weight: bold; }
+  .buddy.unread::after { content: ""; flex: none; width: 10px; height: 10px; margin-left: auto; background: url(../assets/img/alert-bell.png) center / 10px no-repeat; }
+  .buddy .ment { color: #c00; font-weight: bold; }
+  .buddy.sel .ment { color: #fff; }
+  .buddy.away .nm { color: #808080; font-style: italic; }
+  .buddy.sel.away .nm { color: #dfe6f5; }
+  .buddy img.lock { width: 10px; height: 12px; flex: none; }
+  .buddy .ico { width: 12px; height: 12px; flex: none; }
+  .buddy.signon .nm { font-weight: bold; animation: blink 0.5s step-end 6; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .toolbar { flex: none; display: flex; justify-content: space-around; padding: 4px 2px 3px; border-top: 1px solid #fff; box-shadow: 0 -1px 0 #aca899; margin-top: 4px; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 10px; padding: 2px 3px; border: 1px solid transparent; border-radius: 3px; min-width: 34px; }
+  .tool:hover { border-color: #aca899; background: var(--raise); }
+  .tool svg { width: 24px; height: 22px; }
+  .status { flex: none; padding: 2px 6px; font-size: 10px; color: #444; min-height: 15px; }
+  .status.err { color: #c00; }
+  /* away message dialog */
+  .dialog { display: none; position: fixed; inset: 40px 10px auto; background: var(--beige); border: 1px solid var(--frame); box-shadow: 3px 3px 6px rgba(0,0,0,.4); z-index: 99; }
+  .dialog.open { display: block; }
+  .dialog .dt { background: var(--luna); color: #fff; font: bold 12px var(--title-font); padding: 4px 6px; }
+  .dialog .db { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .dialog textarea { height: 70px; resize: none; }
+  .dialog .row { display: flex; justify-content: flex-end; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="client">
+  <div class="ad"><img id="ad" src="../assets/img/ad_07_0071b70.png" alt=""></div>
+  <div class="head">
+    <div class="man"></div>
+    <div class="who"><img src="../assets/img/aim-wordmark.png" alt="AOL Instant Messenger"><div class="sn" id="sn"></div></div>
+  </div>
+  <div class="tabs"><div class="tab on">Online</div><div class="tab">List Setup</div></div>
+  <div class="list" id="list"></div>
+  <div class="toolbar">
+    <div class="tool" id="t-im" title="Send Instant Message"><svg viewBox="0 0 24 22"><rect x="2" y="3" width="17" height="12" rx="2" fill="#fff" stroke="#3a5a9a"/><path d="M6 15l-1 5 5-5" fill="#fff" stroke="#3a5a9a"/><path d="M5 7h11M5 10h8" stroke="#3a5a9a"/><circle cx="19" cy="16" r="4" fill="#ffcc00" stroke="#000"/></svg>IM</div>
+    <div class="tool" id="t-chat" title="Open Chat Room"><svg viewBox="0 0 24 22"><rect x="1" y="2" width="14" height="10" rx="2" fill="#dfe8ff" stroke="#3a5a9a"/><rect x="8" y="8" width="14" height="10" rx="2" fill="#fff" stroke="#3a5a9a"/><path d="M11 12h8M11 15h5" stroke="#3a5a9a"/></svg>Chat</div>
+    <div class="tool" id="t-talk" title="Talk (opens in Slack)"><svg viewBox="0 0 24 22"><path d="M5 11a7 7 0 0 1 14 0" fill="none" stroke="#333" stroke-width="2"/><rect x="3" y="10" width="4" height="7" rx="1.5" fill="#555"/><rect x="17" y="10" width="4" height="7" rx="1.5" fill="#555"/><path d="M19 17q0 3-5 3" fill="none" stroke="#333"/></svg>Talk</div>
+    <div class="tool" id="t-info" title="Get Info (opens in Slack)"><svg viewBox="0 0 24 22"><rect x="2" y="3" width="20" height="15" rx="1" fill="#fffbe0" stroke="#8a7a3a"/><circle cx="7" cy="9" r="2.5" fill="#ffcc00" stroke="#000" stroke-width=".8"/><path d="M4 15q3-4 6 0" fill="#ffcc00" stroke="#000" stroke-width=".8"/><path d="M12 8h7M12 11h7M12 14h5" stroke="#8a7a3a"/></svg>Info</div>
+    <div class="tool" id="t-setup" title="Preferences"><svg viewBox="0 0 24 22"><rect x="2" y="3" width="20" height="14" rx="1" fill="#dfe8f6" stroke="#46608c"/><rect x="4" y="5" width="16" height="10" fill="#3a6fd0"/><path d="M8 20h8M12 17v3" stroke="#46608c" stroke-width="2"/></svg>Setup</div>
+    <div class="tool" id="t-away" title="Away Message"><svg viewBox="0 0 24 22"><rect x="3" y="2" width="16" height="18" fill="#ffef7a" stroke="#a08a00"/><path d="M6 7h10M6 10h10M6 13h7" stroke="#a08a00"/></svg>Away</div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+<div class="dialog" id="awayDlg">
+  <div class="dt">Away Message</div>
+  <div class="db">
+    <div>Enter your away message:</div>
+    <textarea id="awayMsg">I am away from my computer right now.</textarea>
+    <div class="row"><button class="btn" id="awayOk">I'm Away</button><button class="btn" id="awayCancel">Cancel</button></div>
+  </div>
+</div>
+<div class="dialog" id="pickDlg">
+  <div class="dt">Send Instant Message</div>
+  <div class="db">
+    <div id="pickLabel">To:</div>
+    <input type="text" id="pickTo" list="pickList" autocomplete="off">
+    <datalist id="pickList"></datalist>
+    <div class="row"><button class="btn" id="pickOk">Send</button><button class="btn" id="pickCancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  titlebar('Buddy List');
+  document.querySelector('.client').prepend(menubar({
+    'My AIM': [['Away Message...', () => openAway()], ['I\'m Back', () => setBack()], '-', ['Preferences...', () => aim.invoke('open-prefs')], '-', ['Sign Off', () => aim.win('close')]],
+    'People': [['Send Instant Message...', () => openPicker('im')], ['Join a Chat Room...', () => openPicker('chat')], ['Open in Slack', () => selected && aim.invoke('open-in-slack', selected)]],
+    'Help': [['About AIM', () => alert('AOL Instant Messenger 5.5.3595\nNow running on Slack.')]],
+  }));
+
+  const TRI = '<svg class="tri" viewBox="0 0 9 9"><path d="M1 2h7L4.5 7z" fill="#000"/></svg>';
+  const IM_ICON = '<svg class="ico" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="#ffcc00" stroke="#000" stroke-width=".8"/></svg>';
+  const BOT_ICON = '<svg class="ico" viewBox="0 0 12 12"><rect x="2" y="3" width="8" height="7" rx="1" fill="#9ab" stroke="#345"/><circle cx="4.5" cy="6" r="1" fill="#fff"/><circle cx="7.5" cy="6" r="1" fill="#fff"/><path d="M6 1v2" stroke="#345"/></svg>';
+  let data = null, selected = null;
+  let closed = {};
+  try { closed = JSON.parse(localStorage.getItem('aim-closed-v2') || '{}'); } catch {}
+  if (!('Chat Rooms' in closed)) closed['Chat Rooms'] = true;
+
+  function groups() {
+    const all = data.convs.filter(c => c.user !== data.self.id);
+    const by = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    const people = all.filter(c => c.kind === 'im' && !c.bot);
+    const online = people.filter(c => data.presence[c.user] === 'active').sort(by);
+    const away = people.filter(c => data.presence[c.user] !== 'active').sort(by);
+    return [
+      ['Buddies', online, people.length],
+      ['Group Chats', all.filter(c => c.kind === 'mpim').sort(by)],
+      ['Chat Rooms', all.filter(c => c.kind === 'channel').sort(by)],
+      ['Bots', all.filter(c => c.kind === 'im' && c.bot).sort(by)],
+      ['Offline', away, people.length],
+    ];
+  }
+
+  function render() {
+    const list = document.getElementById('list');
+    const scroll = list.scrollTop;
+    list.innerHTML = '';
+    for (const [name, items, total] of groups()) {
+      if (!items.length && name !== 'Buddies') continue;
+      const g = document.createElement('div');
+      g.className = 'group' + (closed[name] ? ' closed' : '');
+      g.innerHTML = `${TRI}<span>${name} (${items.length}/${total ?? items.length})</span>`;
+      g.onclick = () => { closed[name] = !closed[name]; try { localStorage.setItem('aim-closed-v2', JSON.stringify(closed)); } catch {} render(); };
+      const box = document.createElement('div');
+      box.className = 'members';
+      for (const c of items) {
+        const u = data.unread[c.id] || {};
+        const row = document.createElement('div');
+        row.className = 'buddy' + (c.id === selected ? ' sel' : '') + (u.unread ? ' unread' : '') + (name === 'Offline' ? ' away' : '');
+        row.dataset.id = c.id;
+        if (c.user) row.dataset.user = c.user;
+        const icon = c.kind === 'channel' ? (c.private ? '<img class="lock" src="../assets/img/lock.png">' : '') : (c.bot ? BOT_ICON : '');
+        row.innerHTML = `${icon}<span class="nm"></span>${u.mentions ? `<span class="ment">(${u.mentions})</span>` : ''}`;
+        row.querySelector('.nm').textContent = c.kind === 'channel' ? c.name : c.name;
+        row.onclick = () => { selected = c.id; document.querySelectorAll('.buddy.sel').forEach(b => b.classList.remove('sel')); row.classList.add('sel'); };
+        row.ondblclick = () => aim.invoke('open-im', c.id);
+        box.appendChild(row);
+      }
+      list.append(g, box);
+    }
+    list.scrollTop = scroll;
+  }
+
+  // IM / Chat with nothing selected = AIM's "Send Instant Message" box with a To: field.
+  function openSelected(kind = 'im') { if (selected) aim.invoke('open-im', selected); else openPicker(kind); }
+  function needSelection(fn) { return () => { if (selected) fn(selected); else status('Select a buddy first, then click this button.', true); }; }
+  document.getElementById('t-im').onclick = () => openSelected('im');
+  document.getElementById('t-chat').onclick = () => openSelected('chat');
+  document.getElementById('t-talk').onclick = needSelection(id => aim.invoke('open-in-slack', id));
+  document.getElementById('t-info').onclick = needSelection(id => aim.invoke('open-in-slack', id));
+
+  const picker = document.getElementById('pickDlg'), pickTo = document.getElementById('pickTo');
+  let pickKind = 'im', people = [];
+  function pickable() { return data.convs.filter(c => c.user !== data.self.id && (pickKind === 'chat' ? c.kind === 'channel' : c.kind !== 'channel')); }
+  function openPicker(kind) {
+    pickKind = kind;
+    picker.querySelector('.dt').textContent = kind === 'chat' ? 'Join a Chat Room' : 'Send Instant Message';
+    picker.querySelector('#pickLabel').textContent = kind === 'chat' ? 'Chat room:' : 'To:';
+    const known = new Set(pickable().map(c => c.name));
+    const extra = kind === 'im' ? people.filter(p => !known.has(p.name)) : [];
+    document.getElementById('pickList').innerHTML =
+      pickable().map(c => `<option value="${escapeHtml(c.kind === 'channel' ? '#' + c.name : c.name)}">`).join('') +
+      extra.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.real !== p.name ? p.real : '@' + p.handle)}</option>`).join('');
+    pickTo.value = ''; status('');
+    picker.classList.add('open'); pickTo.focus();
+  }
+  async function pickGo() {
+    const q = pickTo.value.trim().replace(/^#/, '').toLowerCase();
+    if (!q) return;
+    const find = (list, key) => list.find(x => key(x) === q) || list.find(x => key(x).startsWith(q)) || list.find(x => key(x).includes(q));
+    const hit = find(pickable(), c => c.name.toLowerCase());
+    if (hit) { picker.classList.remove('open'); aim.invoke('open-im', hit.id); return; }
+    // Not a buddy yet: anyone in the workspace, by display name, real name or @handle.
+    const person = pickKind === 'im' && (find(people, p => p.name.toLowerCase()) || find(people, p => p.real.toLowerCase()) || find(people, p => p.handle.toLowerCase()));
+    if (!person) { status(`No one named "${pickTo.value}".`, true); return; }
+    picker.classList.remove('open');
+    status(`Opening an IM with ${person.name}...`);
+    const r = await aim.invoke('open-dm-user', person.id);
+    status(r.ok ? '' : `Could not start an IM: ${r.error}`, !r.ok);
+  }
+  document.getElementById('pickOk').onclick = pickGo;
+  document.getElementById('pickCancel').onclick = () => picker.classList.remove('open');
+  pickTo.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); pickGo(); } if (e.key === 'Escape') picker.classList.remove('open'); });
+  document.getElementById('t-away').onclick = () => openAway();
+  document.getElementById('t-setup').onclick = () => aim.invoke('open-prefs');
+  aim.on('play', name => play(name));
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && selected && !e.target.closest('.dialog')) openSelected(); });
+
+  const dlg = document.getElementById('awayDlg');
+  function openAway() { dlg.classList.add('open'); document.getElementById('awayMsg').select(); }
+  document.getElementById('awayCancel').onclick = () => dlg.classList.remove('open');
+  document.getElementById('awayOk').onclick = async () => {
+    dlg.classList.remove('open');
+    await aim.invoke('set-away', true, document.getElementById('awayMsg').value);
+    status('You are away: ' + document.getElementById('awayMsg').value);
+  };
+  async function setBack() { await aim.invoke('set-away', false); status(''); }
+  function status(t, err) { const s = document.getElementById('status'); s.textContent = t; s.classList.toggle('err', !!err); }
+
+  // classic banner ads, rotating
+  const ads = ['ad_07_0071b70', 'ad_08_0071bae', 'ad_09_0071c10', 'ad_10_0071c79'];
+  let adN = 0;
+  setInterval(() => { document.getElementById('ad').src = `../assets/img/${ads[++adN % ads.length]}.png`; }, 30000);
+
+  aim.on('buddy-list', d => { data = d; render(); });
+  aim.on('unread', u => { if (data) { data.unread = u; render(); } });
+  aim.on('presence-all', p => { if (data) { data.presence = p; render(); } });
+  aim.on('presence', ({ user, presence, sound }) => {
+    if (!data) return;
+    data.presence[user] = presence;
+    render();
+    if (sound) play(presence === 'active' ? 'dooropen' : 'doorslam');
+    if (presence === 'active') document.querySelector(`.buddy[data-user="${user}"]`)?.classList.add('signon');
+  });
+  aim.on('status', t => status(t, !!t));
+
+  aim.invoke('all-people').then(p => (people = p));
+  aim.invoke('buddy-list').then(d => {
+    data = d;
+    setTitle(`${d.self.name}'s Buddy List Window`);
+    document.getElementById('sn').textContent = d.self.display;
+    render();
+  });
+</script>
+</body>
+</html>

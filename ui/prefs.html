@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>AIM Preferences</title>
+<link rel="stylesheet" href="xp.css">
+<style>
+  .body { flex: 1; display: flex; min-height: 0; padding: 8px; gap: 8px; }
+  .cats { width: 110px; flex: none; background: #fff; border: 1px solid var(--edge); padding: 2px 0; }
+  .cat { padding: 3px 8px; }
+  .cat.on { background: var(--select); color: #fff; }
+  .pane { flex: 1; overflow-y: auto; }
+  fieldset { border: 1px solid #d0d0bf; border-radius: 3px; margin: 0 0 8px; padding: 4px 8px 6px; }
+  legend { color: #0046d5; padding: 0 3px; }
+  label { display: flex; align-items: flex-start; gap: 5px; padding: 3px 0; }
+  label input { margin: 1px 0 0; }
+  .hint { color: #555; font-size: 10px; margin: 0 0 2px 18px; }
+  .footer { flex: none; display: flex; justify-content: flex-end; gap: 6px; padding: 0 8px 8px; }
+  .page { display: none; }
+  .page.on { display: block; }
+</style>
+</head>
+<body>
+<div class="client">
+  <div class="body">
+    <div class="cats">
+      <div class="cat on" data-page="im">IM / Chat</div>
+      <div class="cat" data-page="notify">Notifications</div>
+      <div class="cat" data-page="sounds">Sounds</div>
+    </div>
+    <div class="pane">
+      <div class="page on" id="im">
+        <fieldset><legend>Instant Messages</legend>
+          <label><input type="checkbox" data-key="popIms"> Pop up an IM window when a buddy sends me a message</label>
+          <label><input type="checkbox" data-key="popGroupIms"> Also pop up group chats (group DMs)</label>
+        </fieldset>
+        <fieldset><legend>Chat Rooms</legend>
+          <label><input type="checkbox" data-key="popMentions"> Pop up the chat room when someone @mentions me</label>
+          <label><input type="checkbox" data-key="mentionHereChannel"> Count @here and @channel as mentioning me</label>
+          <div class="hint">Other chat room messages never pop up. They show in bold in your Buddy List.</div>
+        </fieldset>
+      </div>
+      <div class="page" id="notify">
+        <fieldset><legend>Notification banners</legend>
+          <label><input type="checkbox" data-key="banners"> Show a macOS banner for new IMs and @mentions</label>
+          <div class="hint">Only while AIM isn't the app in front. Click a banner to open that conversation.</div>
+          <div style="padding: 6px 0 2px 18px"><button class="btn" id="test">Test Banner</button></div>
+          <div class="hint" id="testNote"></div>
+        </fieldset>
+        <fieldset><legend>Slack</legend>
+          <div class="hint" style="margin-left:0">AIM never changes your Slack settings. Slack's own notifications keep working as usual.</div>
+        </fieldset>
+      </div>
+      <div class="page" id="sounds">
+        <fieldset><legend>Sounds</legend>
+          <label><input type="checkbox" data-key="imSounds"> Play a sound when IMs are received and sent</label>
+          <label><input type="checkbox" data-key="buddySounds"> Play door sounds when buddies sign on and off</label>
+          <div style="padding: 6px 0 2px 18px; display: flex; gap: 6px">
+            <button class="btn" data-play="imrcv">IM In</button><button class="btn" data-play="imsend">IM Out</button><button class="btn" data-play="dooropen">Door Open</button><button class="btn" data-play="doorslam">Door Slam</button>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><button class="btn" id="ok">OK</button><button class="btn" id="cancel">Cancel</button><button class="btn" id="apply">Apply</button></div>
+</div>
+<script src="common.js"></script>
+<script>
+  titlebar('AIM Preferences', { max: false });
+  document.querySelectorAll('.cat').forEach(c => c.onclick = () => {
+    document.querySelectorAll('.cat, .page').forEach(e => e.classList.remove('on'));
+    c.classList.add('on'); document.getElementById(c.dataset.page).classList.add('on');
+  });
+  const boxes = [...document.querySelectorAll('[data-key]')];
+  aim.invoke('get-settings').then(s => boxes.forEach(b => (b.checked = !!s[b.dataset.key])));
+  const collect = () => Object.fromEntries(boxes.map(b => [b.dataset.key, b.checked]));
+  const apply = () => aim.invoke('set-settings', collect());
+  document.getElementById('apply').onclick = apply;
+  document.getElementById('ok').onclick = async () => { await apply(); aim.win('close'); };
+  document.getElementById('cancel').onclick = () => aim.win('close');
+  document.getElementById('test').onclick = async () => {
+    const ok = await aim.invoke('test-banner');
+    document.getElementById('testNote').textContent = ok
+      ? 'Sent. Nothing showed up? Allow AIM in System Settings > Notifications.'
+      : 'Banners are not supported on this Mac.';
+  };
+  // preview buttons ignore the checkboxes on purpose
+  document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => new Audio(`../assets/sounds/${b.dataset.play}.wav`).play().catch(() => {}));
+</script>
+</body>
+</html>
