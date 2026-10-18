@@ -6,6 +6,14 @@ AOL Instant Messenger 5.5, the 2004 Windows XP version, as a front end for Slack
 
 You get a Buddy List window and one Instant Message window per conversation, and new IMs pop open the way they used to. It uses the original door-open and door-slam sounds and the IM chime. Your regular Slack app keeps working as usual alongside it.
 
+## Build it with your coding agent
+
+Point Claude Code, Codex, Cursor, or any coding agent at this repo and say:
+
+> Build and install AIM for Slack from this repo. Follow AGENTS.md.
+
+[AGENTS.md](AGENTS.md) walks the agent through the requirements, a self-test (`npm run check`), the build, and the first launch. Every step has a pass/fail check.
+
 ## How it works
 
 AIM for Slack doesn't need a Slack API token or a custom Slack app, so there's nothing for a workspace admin to approve. Instead, it rides on the Slack desktop app you're already signed in to:
@@ -23,18 +31,21 @@ The first time you sign on, AIM asks before restarting Slack with the bridge tur
 ## Requirements
 
 - macOS
-- The Slack desktop app, signed in
+- The Slack desktop app (not the browser version), signed in to any workspace. Regular workspaces and Enterprise Grid should both work. With several workspaces, AIM uses whichever one is open in Slack.
 - Node.js 20 or newer
 
 ## Install
 
 ```sh
-git clone <this repo>
+git clone https://github.com/nigelcarreiro-blip/aim-for-slack.git
 cd aim-for-slack
-npm install
-npm start                 # run it from source
-npm run install-app       # or build AIM.app and copy it into /Applications
+npm ci
+npm run check             # self-test on a fake workspace; must end with "ok":true
+npm run install-app       # build AIM.app and copy it into /Applications
+open /Applications/AIM.app
 ```
+
+You can also run `npm start` to run it from source.
 
 `npm run build` builds `dist/AIM.app` without installing it. The app is ad-hoc signed, so the first time you open it macOS may ask you to confirm in System Settings > Privacy & Security.
 

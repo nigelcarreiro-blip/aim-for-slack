@@ -6,6 +6,15 @@ const WebSocket = globalThis.WebSocket || require('ws');
 
 const PORT = 9333;
 
+// Runs inside Slack's page: finds the session for the workspace currently open in Slack.
+// Handles regular workspaces (/client/T...), Enterprise Grid (/client/E...), and several signed-in workspaces.
+const FIND_TEAM = `(() => {
+  const id = (location.pathname.match(/\\/client\\/([TE][A-Z0-9]+)/) || [])[1];
+  const teams = JSON.parse(localStorage.getItem('localConfig_v2') || '{}').teams || {};
+  const all = Object.values(teams).filter(t => t && t.token);
+  return teams[id] || all.find(t => t.id === id || t.enterprise_id === id) || (all.length === 1 ? all[0] : null);
+})()`;
+
 class SlackBridge extends EventEmitter {
   constructor() {
     super();
@@ -24,7 +33,7 @@ class SlackBridge extends EventEmitter {
 
   async connect() {
     const list = await this.targets();
-    const page = list.find(p => p.type === 'page' && /app\.slack\.com\/client\/T/.test(p.url));
+    const page = list.find(p => p.type === 'page' && /app\.slack\.com\/client\/[TE]/.test(p.url));
     if (!page) throw new Error('Slack is not open on the debug port');
     this.ws = new WebSocket(page.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { this.ws.onopen = resolve; this.ws.onerror = reject; });
@@ -36,7 +45,8 @@ class SlackBridge extends EventEmitter {
       this.emit('disconnected');
     };
     await this.send('Network.enable');
-    this.team = await this.eval(`(location.pathname.match(/\\/client\\/(T[A-Z0-9]+)/) || [])[1]`);
+    this.team = await this.eval(`(${FIND_TEAM} || {}).id`);
+    if (!this.team) throw new Error('Could not find a signed-in Slack workspace. Open one in the Slack app first.');
     const auth = await this.api('auth.test');
     if (!auth.ok) throw new Error('Slack auth failed: ' + auth.error);
     this.self = { id: auth.user_id, name: auth.user, team: auth.team };
@@ -75,8 +85,8 @@ class SlackBridge extends EventEmitter {
   // Calls a Slack Web API method from inside Slack's page, using its own session.
   api(method, params = {}) {
     return this.eval(`(async () => {
-      const team = (location.pathname.match(/\\/client\\/(T[A-Z0-9]+)/) || [])[1];
-      const t = JSON.parse(localStorage.getItem('localConfig_v2')).teams[team];
+      const t = ${FIND_TEAM};
+      if (!t) return { ok: false, error: 'no_workspace' };
       const fd = new FormData();
       fd.append('token', t.token);
       const p = ${JSON.stringify(params)};

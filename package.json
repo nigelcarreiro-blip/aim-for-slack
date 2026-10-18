@@ -8,13 +8,20 @@
     "start": "electron .",
     "build": "scripts/build-mac.sh",
     "install-app": "scripts/build-mac.sh --install",
-    "demo": "electron . --demo"
+    "demo": "electron . --demo",
+    "check": "node --check main.js && node --check bridge.js && node --check settings.js && node --check demo.js && node --check preload.js && electron . --smoke"
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "33.4.11"
   },
   "dependencies": {
-    "ws": "^8.22.0"
+    "ws": "8.22.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ]
 }

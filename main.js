@@ -6,7 +6,9 @@ const { SlackBridge, PORT } = require('./bridge');
 const settings = require('./settings');
 
 // `npm run demo` (or --demo) swaps in a fake workspace instead of the real Slack app.
-const DEMO = !!process.env.AIM_DEMO || process.argv.includes('--demo');
+// `--smoke` is the self-test behind `npm run check`: demo workspace, drive the UI, exit 0/1.
+const SMOKE = process.argv.includes('--smoke');
+const DEMO = SMOKE || !!process.env.AIM_DEMO || process.argv.includes('--demo');
 const slack = DEMO ? new (require('./demo').DemoBridge)() : new SlackBridge();
 const users = new Map();      // user id -> { id, name, real, handle, image, deleted, bot }
 const handles = new Map();    // slack handle -> user id (for group DM names)
@@ -277,7 +279,7 @@ slack.on('disconnected', () => {
 
 // ---------- IPC ----------
 
-ipcMain.handle('signon', async () => {
+async function signOn() {
   if (!slack.connected) await connectOrLaunchSlack();
   await loadUsers();
   await loadConversations();
@@ -288,7 +290,8 @@ ipcMain.handle('signon', async () => {
   setInterval(pollPresence, PRESENCE_POLL_MS);
   setInterval(pollCounts, COUNTS_POLL_MS);
   return true;
-});
+}
+ipcMain.handle('signon', () => signOn());
 
 ipcMain.handle('screen-name', async () => {
   try { if (!slack.connected) await slack.connect(); return slack.self?.name || ''; } catch { return ''; }
@@ -398,5 +401,41 @@ async function connectOrLaunchSlack() {
   throw new Error('Could not reach Slack. Is the Slack desktop app installed?');
 }
 
-app.whenReady().then(openSignon);
+// Self-test: sign on to the demo workspace, open an IM, and check every window actually rendered.
+async function smokeTest() {
+  const checks = {};
+  const fail = (why) => { console.log(JSON.stringify({ ok: false, why, checks })); app.exit(1); };
+  const timer = setTimeout(() => fail('timed out after 45s'), 45000);
+  const loaded = win => new Promise(res => win.webContents.isLoading() ? win.webContents.once('did-finish-load', res) : res());
+  const query = (win, js) => win.webContents.executeJavaScript(js);
+  try {
+    openSignon();
+    await loaded(signonWin);
+    checks.signonScreenName = await query(signonWin, `new Promise(r => setTimeout(() => r(document.getElementById('sn').textContent), 800))`);
+    await signOn();
+    await loaded(buddyWin);
+    await sleep(1200);
+    checks.buddies = await query(buddyWin, `document.querySelectorAll('.buddy').length`);
+    checks.groups = await query(buddyWin, `[...document.querySelectorAll('.group span')].map(s => s.textContent)`);
+    const firstIm = [...convs.values()].find(c => c.kind === 'im' && !c.bot);
+    const im = openIm(firstIm.id);
+    await loaded(im);
+    await sleep(1500);
+    checks.imTitle = im.getTitle();
+    checks.imMessages = await query(im, `document.querySelectorAll('.msg').length`);
+    await query(im, `document.getElementById('input').value = 'smoke test'; document.getElementById('send').click()`);
+    await sleep(800);
+    checks.imAfterSend = await query(im, `document.querySelectorAll('.msg').length`);
+    openPrefs();
+    await loaded(prefsWin);
+    checks.prefsCheckboxes = await query(prefsWin, `new Promise(r => setTimeout(() => r(document.querySelectorAll('[data-key]').length), 500))`);
+    clearTimeout(timer);
+    const ok = checks.signonScreenName === 'jordan.mitchell' && checks.buddies > 10 && checks.imMessages > 0 &&
+      checks.imAfterSend === checks.imMessages + 1 && checks.prefsCheckboxes === Object.keys(settings.DEFAULTS).length;
+    console.log(JSON.stringify({ ok, checks }));
+    app.exit(ok ? 0 : 1);
+  } catch (e) { fail(e.stack || String(e)); }
+}
+
+app.whenReady().then(SMOKE ? smokeTest : openSignon);
 app.on('window-all-closed', () => app.quit());
